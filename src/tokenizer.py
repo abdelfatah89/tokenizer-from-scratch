@@ -124,15 +124,22 @@ class Tokenizer:
 
     def encode(self, text: str) -> List[int]:
         pretokenized_slices = self.pre_tokenize.split(text)
-        raw_slices = []
+        # raw_slices = []
+        list_tokens = []
         for slice_ in pretokenized_slices:
             raw_text = self.vocab.encode(slice_)
-            raw_slices.append(raw_text)
+            # raw_slices.append(raw_text)
 
-        list_tokens = []
-        for raw_text in raw_slices:
-            for merge in self.merges:
-                raw_text = self._rewrite_slice(merge, raw_text)
+            while len(raw_text) >= 2:
+                # Find pairs present in the current slice
+                pairs = [(raw_text[i], raw_text[i+1]) for i in range(len(raw_text) - 1)]
+                # Find which pair in this slice has the lowest rank in self.merges
+                candidate_pairs = [p for p in pairs if p in self.merges]
+                if not candidate_pairs:
+                    break
+                # Highest priority = earliest learned
+                best_pair = min(candidate_pairs, key=lambda p: self.merges[p])
+                raw_text = self._rewrite_slice(best_pair, raw_text)
             list_tokens.append(raw_text)
 
         return [token for tokens in list_tokens for token in tokens]
