@@ -1,8 +1,9 @@
-from typing import Dict, Tuple, Optional, Any, List
+from typing import Dict, Tuple, Optional, Any, List, Set
 
 import json
 from collections import defaultdict
 from itertools import pairwise
+import regex as re  # type: ignore [import-untyped]
 
 from .pre_tokenizer import PreTokenizer
 from .vocabulary import Vocabulary
@@ -20,10 +21,7 @@ class Tokenizer:
             "model_type": "byte-bpe",
             "vocab_size": self.vocabulary_size
             }
-        self.special_tokens = {
-            "<|endoftext|>": 50256,
-            "<pad>": 50257
-            }
+        self.special_tokens: Dict[str, int] = {}
 
         self.merges: Dict[Tuple[int, int], int] = dict()
         self.chunks: Dict[Tuple[int, ...], int] = dict()
@@ -110,6 +108,25 @@ class Tokenizer:
                 i += 1
         return new_slice
 
+    def _split_special_tokens(self,
+                              text: str,
+                              allowed_special: Set[str] | str) -> List[str]:
+        if not self.special_tokens:
+            return [text]
+
+        if isinstance(allowed_special, set):
+            allowed = {st for st in allowed_special
+                       if st in self.special_tokens}
+        elif allowed_special == "all":
+            allowed = set(self.special_tokens.keys())
+        else:
+            raise ValueError("Invalid value for allowed_special")
+
+        if not allowed:
+            return [text]
+        pattern = f"({'|'.join(re.escape(st) for st in allowed)})"
+        return re.split(pattern, text)
+
     def train(self,
               text_data: str,
               target_vocab_size: Optional[int] = None) -> None:
@@ -122,35 +139,61 @@ class Tokenizer:
                 break
         self.save("tokenizer.json")
 
-    def encode(self, text: str) -> List[int]:
-        pretokenized_slices = self.pre_tokenize.split(text)
-        # raw_slices = []
+    def encode(self,
+               text: str,
+               allowed_special: Set[str] | str = "all"
+               ) -> List[int]:
         list_tokens = []
-        for slice_ in pretokenized_slices:
-            raw_text = self.vocab.encode(slice_)
-            # raw_slices.append(raw_text)
+        split_chunks = self._split_special_tokens(text, allowed_special)
+        for chunk in split_chunks:
+            if chunk in self.special_tokens:
+                list_tokens.extend([self.special_tokens[chunk]])
+                continue
 
-            while len(raw_text) >= 2:
-                # Find pairs present in the current slice
-                pairs = [(raw_text[i], raw_text[i+1]) for i in range(len(raw_text) - 1)]
-                # Find which pair in this slice has the lowest rank in self.merges
-                candidate_pairs = [p for p in pairs if p in self.merges]
-                if not candidate_pairs:
-                    break
-                # Highest priority = earliest learned
-                best_pair = min(candidate_pairs, key=lambda p: self.merges[p])
-                raw_text = self._rewrite_slice(best_pair, raw_text)
-            list_tokens.append(raw_text)
+            pretokenized_slices = self.pre_tokenize.split(chunk)
+            for slice_ in pretokenized_slices:
+                raw_text = self.vocab.encode(slice_)
 
-        return [token for tokens in list_tokens for token in tokens]
+                while len(raw_text) >= 2:
+                    # Find pairs present in the current slice
+                    pairs = [
+                        (raw_text[i], raw_text[i+1])
+                        for i in range(len(raw_text) - 1)
+                        ]
+                    # Find which pair in this slice has the lowest
+                    # rank in self.merges
+                    candidate_pairs = [p for p in pairs if p in self.merges]
+                    if not candidate_pairs:
+                        break
+                    # Highest priority = earliest learned
+                    best_pair = min(candidate_pairs,
+                                    key=lambda p: self.merges[p])
+                    raw_text = self._rewrite_slice(best_pair, raw_text)
+                list_tokens.extend(raw_text)
 
-    def decode(self, ids: List[int]) -> str:
+        return list_tokens
+
+    def decode(self, ids: List[int], skip_special_tokens: bool = False) -> str:
+        if skip_special_tokens:
+            ids = [
+                id_ for id_ in ids
+                if id_ not in self.special_tokens.values()
+                ]
         return self.vocab.decode(ids)
 
+    def register_special_token(self,
+                               token_str: str,
+                               token_id: Optional[int] = None):
+        if token_id is None:
+            token_id = len(self.vocab.id_to_bytes)
+        self.special_tokens[token_str] = token_id
+        token_bytes = token_str.encode("utf-8")
+        self.vocab.id_to_bytes[token_id] = token_bytes
+        self.vocab.bytes_to_id[token_bytes] = token_id
+
     def save(self, file_path: str):
-        dict_tokenizer = self._generate_json_tokenizer()
         with open(file_path, "w") as f:
-            json.dump(dict_tokenizer, f, indent=4)
+            json.dump(self._generate_json_tokenizer(), f, indent=4)
 
     def load(self, file_path: str):
         with open(file_path, "r") as f:
