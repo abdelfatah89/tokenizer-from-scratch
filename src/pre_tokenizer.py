@@ -4,7 +4,11 @@ import regex as re  # type: ignore[import-untyped]
 
 from .vocabulary import Vocabulary
 
-pattern = r"""'s|'t|'re|'ve|'m|'ll|'d| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"""
+pattern = (
+    r"'s|'t|'re|'ve|'m|'ll|'d|"
+    r" ?\p{L}+| ?\p{N}+|"
+    r" ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s+"
+)
 
 
 class PreTokenizer:
