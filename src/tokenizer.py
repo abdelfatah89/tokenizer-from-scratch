@@ -83,7 +83,7 @@ class Tokenizer:
     def _generate_json_tokenizer(self) -> Dict[str, Any]:
         tokenizer_json: Dict[str, Any] = {}
         tokenizer_json["metadata"] = self.metadata
-        tokenizer_json["vocabulary"] = self._generate_json_vocab()
+        tokenizer_json["vocab"] = self._generate_json_vocab()
         tokenizer_json["merges"] = self._generate_merges()
         tokenizer_json["special_tokens"] = self.special_tokens
         return tokenizer_json
