@@ -1,41 +1,44 @@
 # 🪙 tokenizer-from-scratch
 
-A clean, standalone, zero-dependency implementation of a **Byte-Level Byte-Pair Encoding (BPE)** Tokenizer built completely from first principles in Python.
+A production-grade, zero-dependency implementation of a **Byte-Level Byte-Pair Encoding (BPE) Tokenizer** built from first principles in Python.
 
-Inspired by the architectures of modern LLM tokenizers (GPT-4, LLaMA, Mistral), this project demonstrates how raw bytes are transformed into bounded chunks, statistically merged into subwords, and serialized into a custom `tokenizer.json`.
+Inspired by the architectures of modern LLM tokenizers (GPT-4, LLaMA 3, Mistral), this project demonstrates how raw bytes are isolated via regex firewalls, statistically merged into subwords, shielded against special-token injection, and serialized into a standalone `tokenizer.json`.
 
 ---
 
-## ✨ Features
+## ✨ Key Features
 
-- **Pure Byte-Level Encoding**: Base vocabulary of 256 bytes (`0x00` - `0xFF`). Mathematically zero Out-Of-Vocabulary (`<unk>`) errors.
-- **Regex Boundary Firewalls**: Isolates punctuation, contractions, whitespace, and numerical chunks to prevent nonsensical subword merges.
-- **Deterministic Tie-Breaking**: Produces identical vocabulary IDs and merge priority ranks across any machine.
-- **Lossless Invertibility**: Guarantees that `decode(encode(text)) == text` across multi-byte UTF-8 scripts, symbols, and emojis.
-- **Standalone JSON Serialization**: Exports unified `tokenizer.json` containing metadata, merges, and vocabulary tables.
-- **Zero Heavy ML Dependencies**: Built strictly using standard Python primitives and lightweight regular expressions.
+- **Pure Byte-Level Encoding**: Base vocabulary of 256 raw bytes (`0x00` - `0xFF`). Mathematically zero Out-Of-Vocabulary (`<unk>`) errors.
+- **Atomic Special Tokens**: First-class support for control tokens (`<|endoftext|>`, `<pad>`, `<|im_start|>`) with regex-interception guarantees—they are never split or merged.
+- **Prompt-Injection Guard (`allowed_special`)**: Configurable control over which special tokens are parsed versus treated as raw text.
+- **Regex Boundary Firewalls**: GPT-style chunking isolates punctuation, contractions, numbers, and whitespace runs before subword merging.
+- **O(k) Priority-Rank Subword Encoding**: Fast inference that evaluates only candidate pairs within slices, avoiding costly linear scans over the entire merge table.
+- **Deterministic Tie-Breaking**: Lexicographical pair comparisons guarantee 100% reproducible vocabularies across machines.
+- **Lossless Invertibility**: Guarantees `decode(encode(text)) == text` across arbitrary Unicode, emojis, and control characters.
+- **Standalone JSON Persistence**: Exports and loads the entire state (metadata, merges, vocabulary, and special tokens) to/from `tokenizer.json`.
 
 ---
 
 ## 🏗️ Architecture & Pipeline
 
 ```
-Raw Text
+Raw Input Text
    │
    ▼
-[ PreTokenizer ]    --> Regex-based chunking ('s, words, numbers, punctuation)
+[ Special Token Interception ] --> Extracts allowed special tokens atomically
+   │
+   ├──────► Special Token Segment      --> Direct Reserved ID Lookup
+   │
+   └──────► Normal Text Segment         --> [ PreTokenizer Regex Firewall ]
+                                                  │
+                                                  ▼
+                                            [ Raw UTF-8 Byte Tuples (0–255) ]
+                                                  │
+                                                  ▼
+                                            [ Priority-Ranked BPE Merge ]
    │
    ▼
-[ Byte Conversion ] --> Converts chunks into raw UTF-8 byte tuples (0–255)
-   │
-   ▼
-[ BPE Training ]    --> Iteratively pairs, tie-breaks, and assigns subword IDs
-   │
-   ▼
-[ Serializer ]      --> Exports state into `tokenizer.json`
-   │
-   ▼
-[ Inference Engine] --> Priority-based subword replacement (Encode & Decode)
+[ Concatenated Token IDs ]
 ```
 
 ---
@@ -44,10 +47,13 @@ Raw Text
 
 ```
 tokenizer-from-scratch/
-├── vocabulary.py       # Base 256-byte table and UTF-8 byte stream handlers
-├── pre_tokenizer.py    # Regex chunking firewalls and frequency aggregator
-├── tokenizer.py        # Core BPE training loop, merge rules, and JSON serialization
-├── main.py             # Verification tests and Interactive CLI showcase
+├── assets/
+│   ├── test_suite.png    # Automated tests output screenshot
+│   └── cli_showcase.png  # Interactive CLI demonstration screenshot
+├── vocabulary.py         # Base 256-byte mappings, token registration, and UTF-8 decoding
+├── pre_tokenizer.py      # GPT-style regex pattern slicer and chunk frequency counter
+├── tokenizer.py          # BPE trainer, special tokens interceptor, priority merger, and JSON I/O
+├── main.py               # Automated edge-case test suite and Interactive CLI Showcase
 └── README.md
 ```
 
@@ -57,7 +63,7 @@ tokenizer-from-scratch/
 
 ### 1. Installation
 
-Clone the repository and install the regex engine:
+Clone the repository and install the regex library:
 
 ```bash
 git clone https://github.com/your-username/tokenizer-from-scratch.git
@@ -70,47 +76,74 @@ pip install regex
 ```python
 from tokenizer import Tokenizer
 
-# 1. Initialize
+# Initialize
 tok = Tokenizer()
 
-# 2. Train on raw text
-training_data = """
-Byte-Pair Encoding is a subword tokenization algorithm.
-It merges the most frequent pairs of bytes iteratively.
+# 1. Train on raw corpus
+corpus = """
+Byte-Pair Encoding (BPE) is a subword tokenization algorithm.
+It merges frequent byte pairs iteratively without shredding contractions like it's or don't.
 """
-tok.train(training_data, target_vocab_size=300)
+tok.train(corpus, target_vocab_size=320)
 
-# 3. Encode & Decode
-text = "Byte-Pair tokenization!"
-encoded = tok.encode(text)
-decoded = tok.decode(encoded)
+# 2. Register Special Tokens
+tok.register_special_token("<|endoftext|>")
+tok.register_special_token("<pad>")
 
-print(f"Tokens: {encoded}")
-print(f"Decoded: '{decoded}'")
-assert decoded == text
+# 3. Encode (with atomic special tokens handling)
+text = "Learning BPE! <|endoftext|>"
+ids = tok.encode(text, allowed_special="all")
+print("Token IDs:", ids)
+
+# 4. Decode (with or without special tokens)
+print("Full Decoded:", tok.decode(ids, skip_special_tokens=False))
+print("Stripped Decoded:", tok.decode(ids, skip_special_tokens=True))
 ```
 
 ---
 
-## 🧪 Testing & Interactive CLI
+## 🧪 Interactive Showcase & Test Suite
 
-To run the automated validation suite and start the interactive CLI:
+Run the bundled driver script to execute the unit test battery and launch the CLI:
 
 ```bash
 python main.py
 ```
 
+### 1. Automated Validation & Edge-Case Suite
+
+The automated test runner validates standard sentences, contractions, multi-byte UTF-8 characters, numbers, empty strings, repetitive patterns, and special token atomicity.
+
+<p align="center">
+  <img src="assets/test_suite.png" alt="Automated Test Suite" width="750">
+</p>
+
+### 2. Interactive CLI Showcase
+
+An interactive REPL environment that computes real-time compression ratios, inspects token sequences, detects special tokens, and enables dynamic token registration on the fly.
+
+<p align="center">
+  <img src="assets/cli_showcase.png" alt="Interactive CLI Showcase" width="750">
+</p>
+
+### CLI Commands
+Once in the interactive prompt, you can test arbitrary strings or manage special tokens on the fly:
+
+- `:list` — Lists all currently registered special tokens and their assigned IDs.
+- `:add <token>` — Registers a new special token dynamically (e.g., `:add <|im_start|>`).
+- `exit` or `quit` — Exits the showcase.
+
 ---
 
-## 📊 How It Works
+## 🔬 Technical Deep Dive
 
-1. **Phase 1 (Base Alphabet)**: Seeds tokens `0..255` mapped to raw byte literals.
-2. **Phase 2 (Pre-tokenization)**: Chunks text using GPT-style regular expressions.
-3. **Phase 3 (Training)**: Identifies consecutive pairs with maximum corpus frequency, resolves ties lexicographically, and rewrites chunk tables.
-4. **Phase 4 (Inference)**: Uses merge rank lookup to perform greedy left-to-right subword replacement.
+1. **Initialization (Phase 1)**: Tokens `0..255` map directly to UTF-8 byte values `0x00..0xFF`.
+2. **Pre-Tokenization (Phase 2)**: Text is partitioned via regex into contractions, alphabetic words (with optional leading spaces), digits, and punctuation. Merges are strictly forbidden from crossing chunk boundaries.
+3. **Training Loop (Phase 3)**: In each step, all adjacent pairs are tallied across chunk frequencies. The most frequent pair (tie-broken lexicographically) is assigned a new ID (>= 256), and the chunks table is rewritten greedily left-to-right.
+4. **Serialization (Phase 4)**: Merges and vocab are serialized to standard JSON without corrupting raw binary bytes.
+5. **Inference (Phase 5)**: Incoming text is intercepted for special tokens, pre-tokenized, and merged using an $O(k)$ priority-rank lookup over present pairs.
 
 ---
 
 ## 📜 License
-
 MIT License
