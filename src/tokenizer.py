@@ -227,5 +227,5 @@ class Tokenizer:
             tokenizer_json = json.load(f)
         self.special_tokens = tokenizer_json["special_tokens"]
         self.metadata = tokenizer_json["metadata"]
-        self._load_vocab_from_json_tokenizer(tokenizer_json["vocabulary"])
+        self._load_vocab_from_json_tokenizer(tokenizer_json["vocab"])
         self._load_merges(tokenizer_json["merges"])
