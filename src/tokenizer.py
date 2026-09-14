@@ -133,11 +133,38 @@ class Tokenizer:
         if target_vocab_size is not None:
             self.vocabulary_size = target_vocab_size
             self.num_merges = self.vocabulary_size - 256
+            self.metadata["vocab_size"] = self.vocabulary_size
+
+        print("1/2 Pre-tokenizing text data...", end="", flush=True)
         self.chunks = self.pre_tokenize.pre_tokenize(text_data)
-        for _ in range(self.num_merges):
+        print(" Done.")
+
+        print(f"2/2 Training BPE ({self.num_merges} merges planned)...")
+        completed_merges = 0
+
+        for i in range(self.num_merges):
             if not self._step():
+                print(
+                    f"\n[Notice] No more frequent pairs"
+                    f" to merge at step {i + 1}."
+                    )
                 break
+
+            completed_merges += 1
+            percent = (completed_merges / self.num_merges) * 100
+            current_vocab = 256 + completed_merges
+
+            # \r overwrites the current terminal line dynamically
+            print(
+                f"\r  -> Progress: [{completed_merges}/{self.num_merges}] "
+                f"({percent:.1f}%) | Current Vocab: {current_vocab}",
+                end="",
+                flush=True
+            )
+
+        print("\nTraining complete! Saving model...", end="", flush=True)
         self.save("tokenizer.json")
+        print(" Done. Saved to 'tokenizer.json'.")
 
     def encode(self,
                text: str,
